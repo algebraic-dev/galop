@@ -4,7 +4,7 @@
 
 use std::{path::PathBuf, fs, time::Duration};
 
-use analyze::{Report};
+use analyze::Report;
 use path::Id;
 use tokio::time::timeout;
 
@@ -28,7 +28,7 @@ pub fn cleanup_git(folder: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn run_repository(url: String, git_installation: String, analysis: &mut Report) -> Result<(), String> {
+pub async fn run_repository(url: String, git_installation: String, analysis: &mut Report) -> Result<Vec<String>, String> {
     let docker = crate::docker::start("tcp://127.0.0.1:2375".to_string());
 
     let (id, folder) = clone_repo(url.to_string(), git_installation.into())?;
@@ -37,24 +37,23 @@ pub async fn run_repository(url: String, git_installation: String, analysis: &mu
     build_image(&docker, id.clone(), folder.clone()).await?;
     println!("[info] build the image");
 
-    run_image(&docker, id.clone(), analysis).await?;
+    let log = run_image(&docker, id.clone(), analysis).await?;
 
     let _ = cleanup_git(folder.clone());
     println!("[info] deleted the directory to {:?}", folder);
     
-    Ok(())
+    Ok(log)
 }
 
-pub async fn analyze(url: String, git_installation: String) -> Result<Report, String> {
+pub async fn analyze(url: String, git_installation: String) -> Result<(Report, Vec<String>), String> {
     let mut analysis = Report::start();
-    let future = run_repository(url, git_installation, &mut analysis);
-
-    match timeout(Duration::from_secs(60*10), future).await {
+    
+    match timeout(Duration::from_secs(60*10), run_repository(url, git_installation, &mut analysis)).await {
         Err(_) => {
             analysis.register("@!timeout::".to_owned());
-            Ok(analysis)
+            Ok((analysis, Default::default()))
         },
-        Ok(ok) => ok.map(|_| analysis)
+        Ok(ok) => ok.map(|x| (analysis, x))
     }
 }
 

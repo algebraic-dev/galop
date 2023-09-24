@@ -2,16 +2,14 @@
 // It clones a single directory, creates a image with it, creates a container and then runs a single
 // command to test then and extract metrics.
 
-use std::{path::PathBuf, fs, time::Duration, io::Write};
+use std::{path::PathBuf, fs, io::Write};
 
 use clap::Parser;
-use galop::analyze::Return;
-use tokio::time::timeout;
+use galop::analyze::{Return, Participant};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Args {
-    Init,
     Run {
         file: String,
 
@@ -20,7 +18,8 @@ enum Args {
     }
 }
 
-async fn run_participant(url: String, git_installation: String) {
+
+async fn run_participant(url: String, git_installation: String, participant: Participant) -> Result<(), String> {
     let id = galop::path::get_id(&url);
 
     let mut r = PathBuf::from("./submissions");
@@ -34,16 +33,23 @@ async fn run_participant(url: String, git_installation: String) {
         let mut res = fs::File::create(r).unwrap();
     
         match analysis {
-            Ok(result) => {
-                let json = serde_json::to_string(&Return::Ok(result.maps)).unwrap();
+            Ok((result, log)) => {
+                let json = serde_json::to_string(&Return::Ok {
+                    data: result.maps,
+                    participant,
+                    log,
+                }).unwrap();
                 res.write_all(json.as_bytes()).unwrap();
             },
             Err(err) => {
-                let json = serde_json::to_string(&Return::Err(err)).unwrap();
+                println!("[error] {}", err); 
+                let json = serde_json::to_string(&Return::Err(err, participant)).unwrap();
                 res.write_all(json.as_bytes()).unwrap();
             },
         }
     }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -51,15 +57,22 @@ async fn main() {
     let args = Args::parse();
 
     match args {
-        Args::Init => {
-
-        }
         Args::Run { git_installation, file } => {
-            let url = "https://github.com/irbp/darinha.git".to_string();
-            let part = run_participant(url, git_installation);
+            let contents = fs::read_to_string(file);
+            let participants: Vec<Participant> = serde_json::from_str(&contents.unwrap()).unwrap();
+            
+            let mut count = 0;
+
+            for participant in participants {
+                let res = run_participant(participant.repository.clone(), git_installation.clone(), participant).await;
+                
+                if res.is_ok() {
+                    count += 1;
+                }
+            }
+
+            println!("[info] ok {count}")
 
         }
     }
-
-    
 }

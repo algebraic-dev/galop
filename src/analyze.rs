@@ -7,11 +7,25 @@ pub struct Analysis {
     pub duration: u128
 }
 
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Participant {
+    pub name: String,
+    pub repository: String,
+    pub language: String,
+    pub r#type: String,
+    pub social: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "tag", content = "data")]
 pub enum Return {
-    Ok(HashMap<String, Analysis>),
-    Err(String)
+    Ok {
+        data: HashMap<String, Analysis>,
+        participant: Participant,
+        log: Vec<String> 
+    },
+    Err(String, Participant)
 }
 
 #[derive(Debug)]
@@ -32,17 +46,21 @@ impl Report {
         self.last = Instant::now();
     }
     
-    pub fn register(&mut self, log: String) {
+    pub fn register(&mut self, log: String) -> bool {
         let time = self.last.elapsed();
         if let Some(place) = log.find("@!") {
             let str = log.split_at(place).1;
             let (key, val) = str.split_at(log.find("::").unwrap());
             self.maps.insert(key[2..].to_string(), Analysis {
                 data: val[2..].trim().to_owned(),
-                duration: time.as_millis()
+                duration: time.as_micros()
             });
+            self.last = Instant::now();
+            true
+        } else {
+            false
         }
-        self.last = Instant::now();
+       
     }
 }
 

@@ -17,15 +17,26 @@ pub async fn build_image(docker: &Docker, id: Id, path: PathBuf) -> Result<(), S
 
     let mut stream = binding.build(params);
 
+    let mut err = Vec::new();
+
+    let mut already = false;
+
     while let Some(build_result) = stream.next().await {
         match build_result {
             Ok(output) => match output {
                 ImageBuildChunk::Error {
                     error,
                     ..
-                } => return Err(error),
+                } => {
+                    err.push(error.to_string())
+                },
                 ImageBuildChunk::Update { stream } => {
-                    println!("[info] docker: {}", stream.to_string().trim_end());
+                    if already {
+                        print!("\x1b[1A\x1b[K")
+                    } else {    
+                        already = true
+                    }
+                    println!("[info] docker: {}", stream.to_string().lines().next().unwrap_or_default());
                 }
                 _ => ()
             },
@@ -33,14 +44,20 @@ pub async fn build_image(docker: &Docker, id: Id, path: PathBuf) -> Result<(), S
         }
     }
 
-    Ok(())
+    if err.len() > 0 {
+        Err(err.join("\n"))
+    } else {
+        Ok(())
+    }
 }
 
-pub async fn run_image(docker: &Docker, id: Id, analysis: &mut Report) -> Result<(), String> {
+pub async fn run_image(docker: &Docker, id: Id, analysis: &mut Report) -> Result<Vec<String>, String> {
     let params = ContainerCreateOpts::builder()
         .image(id.0)
         .volumes(["/home/sofia/Projects/rinha-tools/galop/tests/source.rinha:/var/rinha/source.rinha", 
                   "/home/sofia/Projects/rinha-tools/galop/tests/source.rinha.json:/var/rinha/source.rinha.json"].into_iter())
+        .cpus(2.0)
+        .memory(2147483648)
         .build();
 
     let containers = &docker.containers();
@@ -50,8 +67,13 @@ pub async fn run_image(docker: &Docker, id: Id, analysis: &mut Report) -> Result
 
     let mut stream = container.logs(&params);
     
+    println!("[info] starting the container");
+    
     container.start().await.map_err(|_| "cannot start container".to_string())?;
     analysis.reset();
+
+    let mut log_info = Vec::new();
+    let mut err_info = Vec::new();
 
     while let Some(res) = stream.next().await {
         match res {
@@ -59,9 +81,18 @@ pub async fn run_image(docker: &Docker, id: Id, analysis: &mut Report) -> Result
                 match res {
                     TtyChunk::StdIn(_) => todo!(),
                     TtyChunk::StdOut(o) => {
-                        analysis.register(std::str::from_utf8(&o).unwrap().to_owned());
+                        let log = std::str::from_utf8(&o).unwrap().to_owned();
+                        if !analysis.register(log.clone()) {
+                            if !log.contains("@@!") {
+                                log_info.push(log)
+                            }
+                        };
                     },
-                    TtyChunk::StdErr(e) => print!("[error] err {}", std::str::from_utf8(&e).unwrap()),
+                    TtyChunk::StdErr(e) => {
+                        let value = std::str::from_utf8(&e).unwrap().to_owned();
+                        print!("[error] err {}", value.clone());
+                        err_info.push(value);
+                    },
                 }
             },
             Err(e) => return Err(format!("cannot read logs '{}'", e.to_string())),
@@ -74,7 +105,11 @@ pub async fn run_image(docker: &Docker, id: Id, analysis: &mut Report) -> Result
 
     docker_prune(docker).await;
 
-    Ok(())
+    if err_info.len() > 0 {    
+        Ok(err_info)
+    } else {
+        Ok(log_info)
+    }
 }
 
 pub async fn docker_prune(docker: &Docker) {
