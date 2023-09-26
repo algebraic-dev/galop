@@ -14,12 +14,15 @@ enum Args {
         file: String,
 
         #[arg(short, long, default_value_t = {"/media/ramdisk".to_string()})]
+        dir: String,
+
+        #[arg(short, long, default_value_t = {"/media/ramdisk".to_string()})]
         git_installation: String,
     }
 }
 
 
-async fn run_participant(url: String, git_installation: String, participant: Participant) -> Result<(), String> {
+async fn run_participant(url: String, dir: String, git_installation: String, participant: Participant) -> Result<(), String> {
     let id = galop::path::get_id(&url);
 
     let mut r = PathBuf::from("./submissions");
@@ -28,7 +31,7 @@ async fn run_participant(url: String, git_installation: String, participant: Par
     if r.exists() {
         println!("[info] already {}", url); 
     } else {
-        let analysis = galop::analyze(url.clone(), git_installation).await;
+        let analysis = galop::analyze(url.clone(), dir, git_installation).await;
 
         let mut res = fs::File::create(r).unwrap();
     
@@ -57,14 +60,14 @@ async fn main() {
     let args = Args::parse();
 
     match args {
-        Args::Run { git_installation, file } => {
+        Args::Run { git_installation, dir, file } => {
             let contents = fs::read_to_string(file);
             let participants: Vec<Participant> = serde_json::from_str(&contents.unwrap()).unwrap();
             
             let mut count = 0;
 
             for participant in participants {
-                let res = run_participant(participant.repository.clone(), git_installation.clone(), participant).await;
+                let res = run_participant(participant.repository.clone(), dir, git_installation.clone(), participant).await;
                 
                 if res.is_ok() {
                     count += 1;

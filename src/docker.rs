@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use docker_api::{opts::{ImageBuildOpts, ContainerCreateOpts, LogsOpts, ImagePruneOpts, ContainerPruneOpts, ContainerStopOpts}, Docker, models::ImageBuildChunk, conn::TtyChunk};
 
-
 use crate::{path::Id, analyze::Report};
 use futures_util::StreamExt;
 
 pub fn start(url: String) -> Docker {
-    docker_api::Docker::new(url).unwrap()
+    let docker = docker_api::Docker::new(url).unwrap();
+    docker
 }
 
 pub async fn build_image(docker: &Docker, id: Id, path: PathBuf) -> Result<(), String> {
@@ -51,11 +51,11 @@ pub async fn build_image(docker: &Docker, id: Id, path: PathBuf) -> Result<(), S
     }
 }
 
-pub async fn run_image(docker: &Docker, id: Id, analysis: &mut Report) -> Result<Vec<String>, String> {
+pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Report) -> Result<Vec<String>, String> {
     let params = ContainerCreateOpts::builder()
         .image(id.0)
-        .volumes(["/home/sofia/Projects/rinha-tools/galop/tests/source.rinha:/var/rinha/source.rinha", 
-                  "/home/sofia/Projects/rinha-tools/galop/tests/source.rinha.json:/var/rinha/source.rinha.json"].into_iter())
+        .volumes([format!("{dir}/tests/source.rinha:/var/rinha/source.rinha"), 
+                  format!("{dir}/tests/source.rinha.json:/var/rinha/source.rinha.json")].into_iter())
         .cpus(2.0)
         .memory(2147483648)
         .build();
@@ -63,6 +63,7 @@ pub async fn run_image(docker: &Docker, id: Id, analysis: &mut Report) -> Result
     let containers = &docker.containers();
     let container = containers.create(&params).await.map_err(|x| format!("cannot create container '{}'", x.to_string()))?;
 
+    
     let params = LogsOpts::builder().stdout(true).stderr(true).all().follow(true).build();
 
     let mut stream = container.logs(&params);

@@ -2,6 +2,11 @@
 //! It clones a single directory, creates a image with it, creates a container and then runs a single
 //! command to test then and extract metrics.
 
+pub mod analyze;
+pub mod path;
+pub mod git;
+pub mod docker;
+
 use std::{path::PathBuf, fs, time::Duration};
 
 use analyze::Report;
@@ -18,7 +23,7 @@ pub fn clone_repo(url: String, git_directory: PathBuf) -> Result<(Id, PathBuf), 
     let id = crate::path::get_id(&url);
     let folder_destination = crate::path::generate_destination(git_installation, id.clone());
     
-    crate::git::clone_directory(&url, folder_destination.clone()).map_err(|_| "cannot clone repository")?;
+    crate::git::clone_directory(&url, folder_destination.clone()).map_err(|e| format!("cannot clone repository '{}'", e.message()))?;
 
     Ok((id, folder_destination))
 }
@@ -28,7 +33,7 @@ pub fn cleanup_git(folder: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn run_repository(url: String, git_installation: String, analysis: &mut Report) -> Result<Vec<String>, String> {
+pub async fn run_repository(url: String, dir: String, git_installation: String, analysis: &mut Report) -> Result<Vec<String>, String> {
     let docker = crate::docker::start("tcp://127.0.0.1:2375".to_string());
 
     let (id, folder) = clone_repo(url.to_string(), git_installation.into())?;
@@ -37,7 +42,7 @@ pub async fn run_repository(url: String, git_installation: String, analysis: &mu
     build_image(&docker, id.clone(), folder.clone()).await?;
     println!("[info] build the image");
 
-    let log = run_image(&docker, id.clone(), analysis).await?;
+    let log = run_image(&docker, dir, id.clone(), analysis).await?;
 
     let _ = cleanup_git(folder.clone());
     println!("[info] deleted the directory to {:?}", folder);
@@ -45,10 +50,10 @@ pub async fn run_repository(url: String, git_installation: String, analysis: &mu
     Ok(log)
 }
 
-pub async fn analyze(url: String, git_installation: String) -> Result<(Report, Vec<String>), String> {
+pub async fn analyze(url: String, dir: String, git_installation: String) -> Result<(Report, Vec<String>), String> {
     let mut analysis = Report::start();
     
-    match timeout(Duration::from_secs(60*10), run_repository(url, git_installation, &mut analysis)).await {
+    match timeout(Duration::from_secs(60*10), run_repository(url, dir, git_installation, &mut analysis)).await {
         Err(_) => {
             analysis.register("@!timeout::".to_owned());
             Ok((analysis, Default::default()))
@@ -56,16 +61,3 @@ pub async fn analyze(url: String, git_installation: String) -> Result<(Report, V
         Ok(ok) => ok.map(|x| (analysis, x))
     }
 }
-
-
-
-
-
-
-
-
-
-pub mod analyze;
-pub mod path;
-pub mod git;
-pub mod docker;
