@@ -50,7 +50,7 @@ impl Report {
         let time = self.last.elapsed();
         if let Some(place) = log.find("@!") {
             let str = log.split_at(place).1;
-            let (key, val) = str.split_at(log.find("::").unwrap());
+            let (key, val) = str.split_at(str.find("::").unwrap());
             self.maps.insert(key[2..].to_string(), Analysis {
                 data: val[2..].trim().to_owned(),
                 duration: time.as_micros()
