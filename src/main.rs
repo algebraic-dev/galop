@@ -2,6 +2,8 @@
 // It clones a single directory, creates a image with it, creates a container and then runs a single
 // command to test then and extract metrics.
 
+// Not the best code!
+
 use std::{path::PathBuf, fs, io::Write};
 
 use clap::Parser;
@@ -67,7 +69,7 @@ async fn main() {
             let mut count = 0;
 
             for participant in participants {
-                let res = run_participant(participant.repository.clone(), dir, git_installation.clone(), participant).await;
+                let res = run_participant(participant.repository.clone(), dir.clone(), git_installation.clone(), participant).await;
                 
                 if res.is_ok() {
                     count += 1;
