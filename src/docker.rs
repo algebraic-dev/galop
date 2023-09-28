@@ -63,7 +63,7 @@ pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Repo
     let containers = &docker.containers();
     let container = containers.create(&params).await.map_err(|x| format!("cannot create container '{}'", x.to_string()))?;
 
-    
+
     let params = LogsOpts::builder().stdout(true).stderr(true).all().follow(true).build();
 
     let mut stream = container.logs(&params);
@@ -115,5 +115,4 @@ pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Repo
 
 pub async fn docker_prune(docker: &Docker) {
     let _ = docker.containers().prune(&ContainerPruneOpts::builder().build()).await;
-    let _ = docker.images().prune(&ImagePruneOpts::builder().build()).await;
 }

@@ -10,6 +10,7 @@ pub mod docker;
 use std::{path::PathBuf, fs, time::Duration};
 
 use analyze::Report;
+use docker::docker_prune;
 use path::Id;
 use tokio::time::timeout;
 
@@ -55,6 +56,8 @@ pub async fn analyze(url: String, dir: String, git_installation: String) -> Resu
     
     match timeout(Duration::from_secs(60*10), run_repository(url, dir, git_installation, &mut analysis)).await {
         Err(_) => {
+            let docker = crate::docker::start("tcp://127.0.0.1:2375".to_string());
+            docker_prune(&docker).await;
             analysis.register("@!timeout::".to_owned());
             Ok((analysis, Default::default()))
         },

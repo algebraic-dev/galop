@@ -7,7 +7,6 @@ pub struct Analysis {
     pub duration: u128
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Participant {
     pub name: String,
