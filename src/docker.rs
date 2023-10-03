@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
-use docker_api::{opts::{ImageBuildOpts, ContainerCreateOpts, LogsOpts, ImagePruneOpts, ContainerPruneOpts, ContainerStopOpts}, Docker, models::ImageBuildChunk, conn::TtyChunk};
+use docker_api::{opts::{ImageBuildOpts, ContainerCreateOpts, LogsOpts, ContainerPruneOpts, ContainerStopOpts}, Docker, models::ImageBuildChunk, conn::TtyChunk};
 
 use crate::{path::Id, analyze::Report};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, lock::Mutex};
 
 pub fn start(url: String) -> Docker {
     let docker = docker_api::Docker::new(url).unwrap();
@@ -51,7 +51,12 @@ pub async fn build_image(docker: &Docker, id: Id, path: PathBuf) -> Result<(), S
     }
 }
 
-pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Report) -> Result<Vec<String>, String> {
+#[derive(Default)]
+pub struct Data {
+    pub docker_id: Mutex<Option<docker_api::Id>>
+}
+
+pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Report, data: Arc<Data>) -> Result<Vec<String>, String> {
     let params = ContainerCreateOpts::builder()
         .image(id.0)
         .volumes([format!("{dir}/tests/source.rinha:/var/rinha/source.rinha"), 
@@ -63,6 +68,8 @@ pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Repo
     let containers = &docker.containers();
     let container = containers.create(&params).await.map_err(|x| format!("cannot create container '{}'", x.to_string()))?;
 
+    let mut id = data.docker_id.lock().await;
+    *id = Some(container.id().clone());
 
     let params = LogsOpts::builder().stdout(true).stderr(true).all().follow(true).build();
 
@@ -71,6 +78,10 @@ pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Repo
     println!("[info] starting the container");
     
     container.start().await.map_err(|_| "cannot start container".to_string())?;
+
+
+    println!("[info] running the container");
+
     analysis.reset();
 
     let mut log_info = Vec::new();

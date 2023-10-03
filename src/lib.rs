@@ -7,10 +7,11 @@ pub mod path;
 pub mod git;
 pub mod docker;
 
-use std::{path::PathBuf, fs, time::Duration};
+use std::{path::PathBuf, fs, time::Duration, sync::Arc};
 
 use analyze::Report;
-use docker::docker_prune;
+use docker::Data;
+use docker_api::opts::ContainerStopOptsBuilder;
 use path::Id;
 use tokio::time::timeout;
 
@@ -34,7 +35,7 @@ pub fn cleanup_git(folder: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn run_repository(url: String, dir: String, git_installation: String, analysis: &mut Report) -> Result<Vec<String>, String> {
+pub async fn run_repository(url: String, dir: String, git_installation: String, analysis: &mut Report, data: Arc<Data>) -> Result<Vec<String>, String> {
     let docker = crate::docker::start("tcp://127.0.0.1:2375".to_string());
 
     let (id, folder) = clone_repo(url.to_string(), git_installation.into())?;
@@ -43,7 +44,7 @@ pub async fn run_repository(url: String, dir: String, git_installation: String, 
     build_image(&docker, id.clone(), folder.clone()).await?;
     println!("[info] build the image");
 
-    let log = run_image(&docker, dir, id.clone(), analysis).await?;
+    let log = run_image(&docker, dir, id.clone(), analysis, data).await?;
 
     let _ = cleanup_git(folder.clone());
     println!("[info] deleted the directory to {:?}", folder);
@@ -53,11 +54,19 @@ pub async fn run_repository(url: String, dir: String, git_installation: String, 
 
 pub async fn analyze(url: String, dir: String, git_installation: String) -> Result<(Report, Vec<String>), String> {
     let mut analysis = Report::start();
+
+    let data = Arc::new(Data::default());
     
-    match timeout(Duration::from_secs(60*10), run_repository(url, dir, git_installation, &mut analysis)).await {
+    match timeout(Duration::from_secs(60*10), run_repository(url, dir, git_installation, &mut analysis, data.clone())).await {
         Err(_) => {
             let docker = crate::docker::start("tcp://127.0.0.1:2375".to_string());
-            docker_prune(&docker).await;
+        
+            let mutex_guard = data.docker_id.lock().await;
+        
+            if let Some(id) = mutex_guard.clone() {
+                let _ = docker.containers().get(id).stop(&ContainerStopOptsBuilder::default().build()).await;
+            }
+
             analysis.register("@!timeout::".to_owned());
             Ok((analysis, Default::default()))
         },
