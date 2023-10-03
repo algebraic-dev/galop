@@ -79,7 +79,6 @@ pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Repo
     
     container.start().await.map_err(|_| "cannot start container".to_string())?;
 
-
     println!("[info] running the container");
 
     analysis.reset();
@@ -103,7 +102,9 @@ pub async fn run_image(docker: &Docker, dir: String, id: Id, analysis: &mut Repo
                     TtyChunk::StdErr(e) => {
                         let value = std::str::from_utf8(&e).unwrap().to_owned();
                         print!("[error] err {}", value.clone());
-                        err_info.push(value);
+                        if err_info.len() < 100 {
+                            err_info.push(value);
+                        }
                     },
                 }
             },
